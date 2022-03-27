@@ -26,7 +26,7 @@ module.exports = function (grunt) {
     grunt.registerTask("prod",
         "Creates a production-ready build. Use the --msg flag to add a compile message.",
         [
-            "eslint", "clean:prod", "clean:config", "exec:generateConfig", "webpack:web",
+            "eslint", "clean:prod", "clean:config", "exec:generateConfig", "findModules", "webpack:web",
             "copy:standalone", "zip:standalone", "clean:standalone", "chmod"
         ]);
 
@@ -36,11 +36,10 @@ module.exports = function (grunt) {
             "clean:node", "clean:config", "clean:nodeConfig", "exec:generateConfig", "exec:generateNodeIndex"
         ]);
 
-    grunt.registerTask("test",
-        "A task which runs all the operation tests in the tests directory.",
+    grunt.registerTask("configTests",
+        "A task which configures config files in preparation for tests to be run. Use `npm test` to run tests.",
         [
-            "clean:config", "clean:nodeConfig", "exec:generateConfig", "exec:generateNodeIndex",
-            "exec:nodeTests", "exec:opTests"
+            "clean:config", "clean:nodeConfig", "exec:generateConfig", "exec:generateNodeIndex"
         ]);
 
     grunt.registerTask("testui",
@@ -55,8 +54,20 @@ module.exports = function (grunt) {
         "Lints the code base",
         ["eslint", "exec:repoSize"]);
 
-    grunt.registerTask("tests", "test");
     grunt.registerTask("lint", "eslint");
+
+    grunt.registerTask("findModules",
+        "Finds all generated modules and updates the entry point list for Webpack",
+        function(arg1, arg2) {
+            const moduleEntryPoints = listEntryModules();
+
+            grunt.log.writeln(`Found ${Object.keys(moduleEntryPoints).length} modules.`);
+
+            grunt.config.set("webpack.web.entry",
+                Object.assign({
+                    main: "./src/web/index.js"
+                }, moduleEntryPoints));
+        });
 
 
     // Load tasks provided by each plugin
@@ -67,7 +78,6 @@ module.exports = function (grunt) {
     grunt.loadNpmTasks("grunt-contrib-watch");
     grunt.loadNpmTasks("grunt-chmod");
     grunt.loadNpmTasks("grunt-exec");
-    grunt.loadNpmTasks("grunt-accessibility");
     grunt.loadNpmTasks("grunt-concurrent");
     grunt.loadNpmTasks("grunt-contrib-connect");
     grunt.loadNpmTasks("grunt-zip");
@@ -83,7 +93,53 @@ module.exports = function (grunt) {
             PKG_VERSION: JSON.stringify(pkg.version),
         },
         moduleEntryPoints = listEntryModules(),
-        nodeConsumerTestPath = "~/tmp-cyberchef";
+        nodeConsumerTestPath = "~/tmp-cyberchef",
+        /**
+         * Configuration for Webpack production build. Defined as a function so that it
+         * can be recalculated when new modules are generated.
+         */
+        webpackProdConf = () => {
+            return {
+                mode: "production",
+                target: "web",
+                entry: Object.assign({
+                    main: "./src/web/index.js"
+                }, moduleEntryPoints),
+                output: {
+                    path: __dirname + "/build/prod",
+                    filename: chunkData => {
+                        return chunkData.chunk.name === "main" ? "assets/[name].js": "[name].js";
+                    },
+                    globalObject: "this"
+                },
+                resolve: {
+                    alias: {
+                        "./config/modules/OpModules.mjs": "./config/modules/Default.mjs"
+                    }
+                },
+                plugins: [
+                    new webpack.DefinePlugin(BUILD_CONSTANTS),
+                    new HtmlWebpackPlugin({
+                        filename: "index.html",
+                        template: "./src/web/html/index.html",
+                        chunks: ["main"],
+                        compileTime: compileTime,
+                        version: pkg.version,
+                        minify: {
+                            removeComments: true,
+                            collapseWhitespace: true,
+                            minifyJS: true,
+                            minifyCSS: true
+                        }
+                    }),
+                    new BundleAnalyzerPlugin({
+                        analyzerMode: "static",
+                        reportFilename: "BundleAnalyzerReport.html",
+                        openAnalyzer: false
+                    }),
+                ]
+            };
+        };
 
 
     /**
@@ -118,7 +174,7 @@ module.exports = function (grunt) {
             // previous one fails. & would coninue on a fail
             .join("&&")
             // Windows does not support \n properly
-            .replace("\n", "\\n");
+            .replace(/\n/g, "\\n");
     }
 
     grunt.initConfig({
@@ -140,67 +196,15 @@ module.exports = function (grunt) {
             node: ["src/node/**/*.{js,mjs}"],
             tests: ["tests/**/*.{js,mjs}"],
         },
-        accessibility: {
-            options: {
-                accessibilityLevel: "WCAG2A",
-                verbose: false,
-                ignore: [
-                    "WCAG2A.Principle1.Guideline1_3.1_3_1.H42.2"
-                ]
-            },
-            test: {
-                src: ["build/**/*.html"]
-            }
-        },
         webpack: {
             options: webpackConfig,
-            web: () => {
-                return {
-                    mode: "production",
-                    target: "web",
-                    entry: Object.assign({
-                        main: "./src/web/index.js"
-                    }, moduleEntryPoints),
-                    output: {
-                        path: __dirname + "/build/prod",
-                        filename: chunkData => {
-                            return chunkData.chunk.name === "main" ? "assets/[name].js": "[name].js";
-                        },
-                        globalObject: "this"
-                    },
-                    resolve: {
-                        alias: {
-                            "./config/modules/OpModules.mjs": "./config/modules/Default.mjs"
-                        }
-                    },
-                    plugins: [
-                        new webpack.DefinePlugin(BUILD_CONSTANTS),
-                        new HtmlWebpackPlugin({
-                            filename: "index.html",
-                            template: "./src/web/html/index.html",
-                            chunks: ["main"],
-                            compileTime: compileTime,
-                            version: pkg.version,
-                            minify: {
-                                removeComments: true,
-                                collapseWhitespace: true,
-                                minifyJS: true,
-                                minifyCSS: true
-                            }
-                        }),
-                        new BundleAnalyzerPlugin({
-                            analyzerMode: "static",
-                            reportFilename: "BundleAnalyzerReport.html",
-                            openAnalyzer: false
-                        }),
-                    ]
-                };
-            },
+            web: webpackProdConf(),
         },
         "webpack-dev-server": {
             options: {
                 webpack: webpackConfig,
                 host: "0.0.0.0",
+                port: grunt.option("port") || 8080,
                 disableHostCheck: true,
                 overlay: true,
                 inline: false,
@@ -257,7 +261,7 @@ module.exports = function (grunt) {
         connect: {
             prod: {
                 options: {
-                    port: 8000,
+                    port: grunt.option("port") || 8000,
                     base: "build/prod/"
                 }
             }
@@ -285,7 +289,7 @@ module.exports = function (grunt) {
                 },
                 files: [
                     {
-                        src: "build/prod/index.html",
+                        src: ["build/prod/index.html"],
                         dest: "build/prod/index.html"
                     }
                 ]
@@ -307,7 +311,7 @@ module.exports = function (grunt) {
                 },
                 files: [
                     {
-                        src: "build/prod/index.html",
+                        src: ["build/prod/index.html"],
                         dest: `build/prod/CyberChef_v${pkg.version}.html`
                     }
                 ]
@@ -345,7 +349,8 @@ module.exports = function (grunt) {
                 command: "git gc --prune=now --aggressive"
             },
             sitemap: {
-                command: "node --experimental-modules --no-warnings --no-deprecation src/web/static/sitemap.mjs > build/prod/sitemap.xml"
+                command: "node --experimental-modules --no-warnings --no-deprecation src/web/static/sitemap.mjs > build/prod/sitemap.xml",
+                sync: true
             },
             generateConfig: {
                 command: chainCommands([
@@ -354,7 +359,8 @@ module.exports = function (grunt) {
                     "node --experimental-modules --no-warnings --no-deprecation src/core/config/scripts/generateOpsIndex.mjs",
                     "node --experimental-modules --no-warnings --no-deprecation src/core/config/scripts/generateConfig.mjs",
                     "echo '--- Config scripts finished. ---\n'"
-                ])
+                ]),
+                sync: true
             },
             generateNodeIndex: {
                 command: chainCommands([
@@ -362,15 +368,10 @@ module.exports = function (grunt) {
                     "node --experimental-modules --no-warnings --no-deprecation src/node/config/scripts/generateNodeIndex.mjs",
                     "echo '--- Node index generated. ---\n'"
                 ]),
-            },
-            opTests: {
-                command: "node --experimental-modules --no-warnings --no-deprecation tests/operations/index.mjs"
+                sync: true
             },
             browserTests: {
                 command: "./node_modules/.bin/nightwatch --env prod"
-            },
-            nodeTests: {
-                command: "node --experimental-modules --no-warnings --no-deprecation tests/node/index.mjs"
             },
             setupNodeConsumers: {
                 command: chainCommands([
@@ -381,6 +382,7 @@ module.exports = function (grunt) {
                     `cd ${nodeConsumerTestPath}`,
                     "npm link cyberchef"
                 ]),
+                sync: true
             },
             teardownNodeConsumers: {
                 command: chainCommands([
@@ -409,6 +411,16 @@ module.exports = function (grunt) {
                 ]),
                 stdout: false,
             },
+            fixCryptoApiImports: {
+                command: [
+                    `[[ "$OSTYPE" == "darwin"* ]]`,
+                    "&&",
+                    `find ./node_modules/crypto-api/src/ \\( -type d -name .git -prune \\) -o -type f -print0 | xargs -0 sed -i '' -e '/\\.mjs/!s/\\(from "\\.[^"]*\\)";/\\1.mjs";/g'`,
+                    "||",
+                    `find ./node_modules/crypto-api/src/ \\( -type d -name .git -prune \\) -o -type f -print0 | xargs -0 sed -i -e '/\\.mjs/!s/\\(from "\\.[^"]*\\)";/\\1.mjs";/g'`
+                ].join(" "),
+                stdout: false
+            }
         },
     });
 };

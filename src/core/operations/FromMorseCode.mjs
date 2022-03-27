@@ -37,12 +37,12 @@ class FromMorseCode extends Operation {
                 "value": WORD_DELIM_OPTIONS
             }
         ];
-        this.patterns = [
+        this.checks = [
             {
-                match: "(?:^[-. \\n]{5,}$|^[_. \\n]{5,}$|^(?:dash|dot| |\\n){5,}$)",
+                pattern: "(?:^[-. \\n]{5,}$|^[_. \\n]{5,}$|^(?:dash|dot| |\\n){5,}$)",
                 flags: "i",
                 args: ["Space", "Line feed"]
-            },
+            }
         ];
     }
 
@@ -147,7 +147,8 @@ const MORSE_TABLE = {
     "=": "<dash><dot><dot><dot><dash>",
     "&": "<dot><dash><dot><dot><dot>",
     "_": "<dot><dot><dash><dash><dot><dash>",
-    "$": "<dot><dot><dot><dash><dot><dot><dash>"
+    "$": "<dot><dot><dot><dash><dot><dot><dash>",
+    " ": "<dot><dot><dot><dot><dot><dot><dot>"
 };
 
 export default FromMorseCode;

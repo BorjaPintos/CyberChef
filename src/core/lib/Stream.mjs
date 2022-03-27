@@ -177,7 +177,7 @@ export default class Stream {
 
         // Get the skip table.
         const skiptable = preprocess(val, length);
-        let found = true;
+        let found;
 
         while (this.position < this.length) {
             // Until we hit the final element of val in the stream.
@@ -303,11 +303,13 @@ export default class Stream {
     /**
      * Returns a slice of the stream up to the current position.
      *
+     * @param {number} [start=0]
+     * @param {number} [finish=this.position]
      * @returns {Uint8Array}
      */
-    carve() {
-        if (this.bitPos > 0) this.position++;
-        return this.bytes.slice(0, this.position);
+    carve(start=0, finish=this.position) {
+        if (this.bitPos > 0) finish++;
+        return this.bytes.slice(start, finish);
     }
 
 }

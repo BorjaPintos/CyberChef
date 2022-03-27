@@ -38,6 +38,13 @@ class ParseSSHHostKey extends Operation {
                 ]
             }
         ];
+        this.checks = [
+            {
+                pattern:  "^\\s*([A-F\\d]{2}[,;:]){15,}[A-F\\d]{2}\\s*$",
+                flags:  "i",
+                args:   ["Hex"]
+            }
+        ];
     }
 
     /**
@@ -80,7 +87,7 @@ class ParseSSHHostKey extends Operation {
      * @returns {byteArray}
      */
     convertKeyToBinary(inputKey, inputFormat) {
-        const keyPattern = new RegExp(/^(?:[ssh]|[ecdsa-sha2])\S+\s+(\S*)/),
+        const keyPattern = new RegExp(/^(?:ssh|ecdsa-sha2)\S+\s+(\S*)/),
             keyMatch = inputKey.match(keyPattern);
 
         if (keyMatch) {
